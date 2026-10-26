@@ -325,8 +325,14 @@ export default {
       if (path === '/admin/ofertas' && method === 'GET') {
         if (!user || user.role !== 'admin') return json({ error: 'No autorizado' }, 403);
         const ids = await getIndex(env, 'idx:ofertas');
-        const todas = await Promise.all(ids.map(id => env.BOLSA_KV.get(`oferta:${id}`, 'json')));
-        return json(todas.filter(Boolean));
+        const todas = (await Promise.all(ids.map(id => env.BOLSA_KV.get(`oferta:${id}`, 'json')))).filter(Boolean);
+        const empresaIds = await getIndex(env, 'idx:empresas');
+        const empresasMap = {};
+        for (const eid of empresaIds) {
+          const e = await env.BOLSA_KV.get(`empresa:${eid}`, 'json');
+          if (e) empresasMap[e.id] = e.nombre;
+        }
+        return json(todas.map(o => ({ ...o, nombreEmpresa: empresasMap[o.empresaId] || '' })));
       }
 
       // ── Admin: activar oferta + desbloquear perfiles ───────
@@ -515,7 +521,17 @@ export default {
         const publicas = [];
         for (const oid of ofertaIds) {
           const o = await env.BOLSA_KV.get(`oferta:${oid}`, 'json');
-          if (o && o.publica && o.status === 'activa') publicas.push({ id: o.id, titulo: o.titulo, descripcion: o.descripcion, sector: o.sector, categoria: o.categoria, oficio: o.oficio, createdAt: o.createdAt });
+          if (o && o.publica && o.status === 'activa') {
+            let nombreEmpresa = '';
+            if (o.empresaId) {
+              const empresaIds = await getIndex(env, 'idx:empresas');
+              for (const eid of empresaIds) {
+                const e = await env.BOLSA_KV.get(`empresa:${eid}`, 'json');
+                if (e && e.id === o.empresaId) { nombreEmpresa = e.nombre; break; }
+              }
+            }
+            publicas.push({ id: o.id, titulo: o.titulo, descripcion: o.descripcion, sector: o.sector, categoria: o.categoria, oficio: o.oficio, nombreEmpresa, createdAt: o.createdAt });
+          }
         }
         return json(publicas);
       }
@@ -1292,6 +1308,7 @@ async function loadOfertasAdmin() {
         <div class="oferta-titulo">\${o.titulo}</div>
         <div style="display:flex;gap:6px">\${badge}\${publicaBadge}</div>
       </div>
+      \${o.nombreEmpresa ? \`<div style="font-size:13px;font-weight:600;color:var(--primary);margin-bottom:4px">🏭 \${o.nombreEmpresa}</div>\` : ''}
       <div class="oferta-meta" style="margin-top:8px">
         <span>📁 \${o.sector === 'fabricacion' ? 'Fabricación' : 'Oficina/Logística'}</span>
         <span>🏷 \${o.categoria}</span>
@@ -1518,6 +1535,7 @@ async function loadOfertasPublicas() {
   div.innerHTML = lista.map(o => \`
     <div class="oferta-card">
       <div class="oferta-titulo">\${o.titulo}</div>
+      \${o.nombreEmpresa ? \`<div style="font-size:13px;font-weight:600;color:var(--primary);margin-bottom:4px">🏭 \${o.nombreEmpresa}</div>\` : ''}
       <div class="oferta-meta">
         <span>📁 \${o.sector === 'fabricacion' ? 'Fabricación' : 'Oficina/Logística'}</span>
         <span>🏷 \${o.categoria}</span>
