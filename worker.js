@@ -179,6 +179,9 @@ export default {
         const body = await request.json();
         const { nombre, cif, contacto, telefono, email } = body;
         if (!nombre || !cif || !email) return json({ error: 'Faltan campos obligatorios' }, 400);
+        // Verificar email duplicado
+        const usersIdx = await getIndex(env, 'idx:users');
+        for (const uid of usersIdx) { const u = await env.BOLSA_KV.get(`user:${uid}`, 'json'); if (u && u.email === email) return json({ error: 'Ya existe una cuenta con ese email' }, 409); }
         const id = generateId();
         const userId = `emp_${id}`;
         const pw = generatePassword();
@@ -197,6 +200,9 @@ export default {
         const body = await request.json();
         const { nombre, apellidos, dni, telefono, email, direccion, localidad } = body;
         if (!nombre || !apellidos || !dni || !email) return json({ error: 'Faltan campos obligatorios' }, 400);
+        // Verificar email duplicado
+        const usersIdx2 = await getIndex(env, 'idx:users');
+        for (const uid of usersIdx2) { const u = await env.BOLSA_KV.get(`user:${uid}`, 'json'); if (u && u.email === email) return json({ error: 'Ya existe una cuenta con ese email' }, 409); }
         const id = generateId();
         const userId = `trab_${id}`;
         const pw = generatePassword();
