@@ -682,6 +682,16 @@ export default {
         return new Response(HTML, { headers: { 'Content-Type': 'text/html;charset=UTF-8' } });
       }
 
+      // ── Política de privacidad ─────────────────────────────
+      if (path === '/privacidad') {
+        return new Response(PRIVACIDAD_HTML, { headers: { 'Content-Type': 'text/html;charset=UTF-8' } });
+      }
+
+      // ── Aviso legal ─────────────────────────────────────────
+      if (path === '/aviso-legal') {
+        return new Response(AVISO_LEGAL_HTML, { headers: { 'Content-Type': 'text/html;charset=UTF-8' } });
+      }
+
       return json({ error: 'Ruta no encontrada' }, 404);
 
     } catch (err) {
@@ -760,6 +770,10 @@ a { color: var(--accent); text-decoration: none; }
 .form-group { margin-bottom: 16px; }
 .form-label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; color: var(--text); }
 .form-label .req { color: var(--danger); margin-left: 2px; }
+.rgpd-info { font-size: 12px; color: var(--text-secondary); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; line-height: 1.6; }
+.rgpd-info strong { color: var(--text); }
+.rgpd-check { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; color: var(--text); margin-bottom: 14px; cursor: pointer; }
+.rgpd-check input[type=checkbox] { margin-top: 2px; flex-shrink: 0; }
 .form-control { width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px; font-family: inherit; background: var(--surface); color: var(--text); transition: border-color .15s; }
 .form-control:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-light); }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
@@ -913,6 +927,17 @@ tr:hover td { background: #FAFAF8; }
       <div class="form-group"><label class="form-label">Email <span class="req">*</span></label><input id="reEmail" type="email" class="form-control" placeholder="correo@empresa.com"></div>
       <div id="reError" class="alert alert-danger" style="display:none"></div>
       <div id="reOk" class="alert alert-success" style="display:none"></div>
+      <div class="rgpd-info">
+        <strong>Información básica sobre protección de datos (art. 13 RGPD)</strong><br>
+        <strong>Responsable:</strong> Asopiel — CIF G-72357205 — gerencia@asopiel.com<br>
+        <strong>Finalidad:</strong> Gestión de su alta como empresa en la Bolsa de Empleo sectorial y comunicaciones relacionadas.<br>
+        <strong>Legitimación:</strong> Ejecución de relación precontractual (art. 6.1.b RGPD); consentimiento (art. 6.1.a RGPD).<br>
+        <strong>Conservación:</strong> Mientras mantenga el acceso activo y hasta 3 años tras la baja.<br>
+        <strong>Destinatarios:</strong> No se ceden a terceros salvo obligación legal. Los trabajadores asignados a su empresa podrán ver los datos de contacto de la empresa.<br>
+        <strong>Derechos:</strong> Puede ejercer sus derechos de acceso, rectificación, supresión, oposición, limitación y portabilidad escribiendo a gerencia@asopiel.com.<br>
+        <a href="#" onclick="abrirLegal('privacidad')" style="color:var(--primary)">Política de privacidad completa</a>
+      </div>
+      <label class="rgpd-check"><input type="checkbox" id="reConsentimiento"> He leído y acepto el tratamiento de mis datos según la política de privacidad de Asopiel. <span class="req">*</span></label>
       <button class="btn btn-primary btn-block" onclick="registrarEmpresa()">Solicitar alta</button>
     </div>
 
@@ -932,6 +957,17 @@ tr:hover td { background: #FAFAF8; }
       <div class="form-group"><label class="form-label">Email <span class="req">*</span></label><input id="rtEmail" type="email" class="form-control"></div>
       <div id="rtError" class="alert alert-danger" style="display:none"></div>
       <div id="rtOk" class="alert alert-success" style="display:none"></div>
+      <div class="rgpd-info">
+        <strong>Información básica sobre protección de datos (art. 13 RGPD)</strong><br>
+        <strong>Responsable:</strong> Asopiel — CIF G-72357205 — gerencia@asopiel.com<br>
+        <strong>Finalidad:</strong> Gestión de su perfil en la Bolsa de Empleo sectorial, intermediación laboral con empresas del sector y envío de información sobre cursos si lo autoriza expresamente.<br>
+        <strong>Legitimación:</strong> Ejecución de relación precontractual (art. 6.1.b RGPD); consentimiento (art. 6.1.a RGPD).<br>
+        <strong>Conservación:</strong> Mientras mantenga el perfil activo y hasta 3 años tras la baja.<br>
+        <strong>Destinatarios:</strong> Las empresas del sector a las que Asopiel le asigne su perfil para procesos de selección. No se ceden a otros terceros salvo obligación legal.<br>
+        <strong>Derechos:</strong> Puede ejercer sus derechos de acceso, rectificación, supresión, oposición, limitación y portabilidad escribiendo a gerencia@asopiel.com. Tiene derecho a retirar el consentimiento en cualquier momento sin que afecte a la licitud del tratamiento previo.<br>
+        <a href="#" onclick="abrirLegal('privacidad')" style="color:var(--primary)">Política de privacidad completa</a>
+      </div>
+      <label class="rgpd-check"><input type="checkbox" id="rtConsentimiento"> He leído y acepto el tratamiento de mis datos según la política de privacidad de Asopiel, incluyendo la cesión de mi perfil a empresas del sector asignadas por Asopiel. <span class="req">*</span></label>
       <button class="btn btn-primary btn-block" onclick="registrarTrabajador()">Solicitar alta</button>
     </div>
   </div>
@@ -1322,6 +1358,7 @@ async function registrarEmpresa() {
   err.style.display = 'none'; ok.style.display = 'none';
   const body = { nombre: document.getElementById('reNombre').value.trim(), cif: document.getElementById('reCif').value.trim(), contacto: document.getElementById('reContacto').value.trim(), telefono: document.getElementById('reTel').value.trim(), email: document.getElementById('reEmail').value.trim() };
   if (!body.nombre || !body.cif || !body.email) { err.textContent = 'Complete los campos obligatorios'; err.style.display = 'block'; return; }
+  if (!document.getElementById('reConsentimiento').checked) { err.textContent = 'Debe aceptar la política de protección de datos para continuar.'; err.style.display = 'block'; return; }
   try {
     const r = await fetch(API + '/empresas/registro', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const d = await r.json();
@@ -1336,6 +1373,7 @@ async function registrarTrabajador() {
   err.style.display = 'none'; ok.style.display = 'none';
   const body = { nombre: document.getElementById('rtNombre').value.trim(), apellidos: document.getElementById('rtApellidos').value.trim(), dni: document.getElementById('rtDni').value.trim(), telefono: document.getElementById('rtTel').value.trim(), direccion: document.getElementById('rtDireccion').value.trim(), localidad: document.getElementById('rtLocalidad').value.trim(), email: document.getElementById('rtEmail').value.trim() };
   if (!body.nombre || !body.apellidos || !body.dni || !body.email) { err.textContent = 'Complete los campos obligatorios'; err.style.display = 'block'; return; }
+  if (!document.getElementById('rtConsentimiento').checked) { err.textContent = 'Debe aceptar la política de protección de datos para continuar.'; err.style.display = 'block'; return; }
   try {
     const r = await fetch(API + '/trabajadores/registro', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const d = await r.json();
@@ -1669,6 +1707,11 @@ async function loadMiPerfil() {
         <textarea id="sugerenciaTexto" class="form-control" rows="3" placeholder="Ej: Sería interesante un taller de teñido de pieles para oficiales..." style="resize:vertical;margin-bottom:8px"></textarea>
         <button class="btn btn-primary btn-sm" onclick="enviarSugerencia()">Enviar propuesta</button>
         <span id="sugerenciaStatus" style="font-size:12px;color:var(--primary);margin-left:10px"></span>
+      </div>
+
+      <div style="margin-top:16px;padding:12px 14px;border:1px solid var(--border);border-radius:8px;font-size:12px;color:var(--text-muted)">
+        🔒 <strong>Sus datos están protegidos.</strong> Puede ejercer sus derechos de acceso, rectificación, supresión, oposición, limitación y portabilidad escribiendo a <a href="mailto:gerencia@asopiel.com" style="color:var(--primary)">gerencia@asopiel.com</a>. Para solicitar la eliminación de su cuenta y datos: <a href="mailto:gerencia@asopiel.com?subject=Solicitud%20de%20supresión%20de%20datos&body=Solicito%20la%20supresión%20de%20mi%20cuenta%20y%20todos%20mis%20datos%20del%20Portal%20de%20Empleo%20de%20Asopiel." style="color:var(--primary)">enviar solicitud de supresión (art. 17 RGPD)</a>.
+        Ver <a href="/privacidad" target="_blank" style="color:var(--primary)">política de privacidad completa</a>.
       </div>
     </div>
   \`;
@@ -2095,5 +2138,182 @@ initLegal();
   </div>
 </div>
 
+<footer style="margin-top:40px;padding:20px 0;text-align:center;font-size:12px;color:var(--text-secondary);border-top:1px solid var(--border)">
+  <strong>Asociación de Empresarios del Sector de la Piel de Ubrique (ASOPIEL)</strong><br>
+  CIF G-72357205 · Avda. de los Callejones, 18, Bl. 1, Pl. 1, Pta. C · 11600 Ubrique (Cádiz)<br>
+  <a href="mailto:gerencia@asopiel.com" style="color:var(--primary)">gerencia@asopiel.com</a><br>
+  <br>
+  <a href="/privacidad" target="_blank" style="color:var(--primary)">Política de privacidad</a> ·
+  <a href="/aviso-legal" target="_blank" style="color:var(--primary)">Aviso legal</a> ·
+  <a href="#" onclick="abrirLegal('cookies')" style="color:var(--primary)">Cookies</a>
+</footer>
+</body>
+</html>`;
+
+// ============================================================
+// POLÍTICA DE PRIVACIDAD
+// ============================================================
+const PRIVACIDAD_HTML = `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Política de Privacidad — Portal de Empleo Piel de Ubrique</title>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:800px;margin:0 auto;padding:40px 20px;color:#1a1a2e;line-height:1.8;font-size:16px}
+h1{font-size:24px;font-weight:700;margin-bottom:4px;color:#1a1a2e}
+h2{font-size:17px;font-weight:600;margin-top:32px;margin-bottom:8px;color:#1a1a2e}
+h3{font-size:15px;font-weight:600;margin-top:20px;margin-bottom:6px;color:#1a1a2e}
+p{margin-bottom:14px}
+ul{margin:0 0 14px 20px}
+li{margin-bottom:6px}
+a{color:#5c6bc0;text-decoration:none}
+a:hover{text-decoration:underline}
+.meta{font-size:13px;color:#666;margin-bottom:32px}
+.back{display:inline-block;margin-bottom:28px;font-size:14px;color:#5c6bc0;text-decoration:none}
+table{width:100%;border-collapse:collapse;margin-bottom:16px;font-size:14px}
+th,td{border:1px solid #ddd;padding:8px 12px;text-align:left;vertical-align:top}
+th{background:#f5f5f5;font-weight:600}
+</style>
+</head>
+<body>
+<a href="/" class="back">← Volver al Portal de Empleo</a>
+<h1>Política de Privacidad</h1>
+<p class="meta">Portal de Empleo Sectorial · Piel de Ubrique · Versión 1.0 · Octubre 2026</p>
+
+<h2>1. Responsable del tratamiento</h2>
+<table>
+<tr><th>Denominación</th><td>Asociación de Empresarios del Sector de la Piel de Ubrique (ASOPIEL)</td></tr>
+<tr><th>CIF</th><td>G-72357205</td></tr>
+<tr><th>Domicilio</th><td>Avda. de los Callejones, 18, Bloque 1, Planta 1, Puerta C · 11600 Ubrique (Cádiz)</td></tr>
+<tr><th>Email</th><td><a href="mailto:gerencia@asopiel.com">gerencia@asopiel.com</a></td></tr>
+<tr><th>DPD</th><td>No designado (no obligatorio según art. 37 RGPD para este perfil de actividad)</td></tr>
+</table>
+
+<h2>2. Finalidades y base legal del tratamiento</h2>
+
+<h3>A. Trabajadores demandantes de empleo</h3>
+<p>Tratamos sus datos para:</p>
+<ul>
+<li>Gestionar su perfil en la bolsa de empleo sectorial y facilitar la intermediación laboral.</li>
+<li>Comunicarle ofertas de empleo del sector marroquinería de Ubrique.</li>
+<li>Si lo autoriza expresamente, enviarle información sobre cursos, talleres y seminarios del sector.</li>
+<li>Compartir su perfil profesional con empresas del sector asignadas por Asopiel para procesos de selección.</li>
+<li>Conservar su vida laboral (documento PDF) y ponerla a disposición de Asopiel y las empresas autorizadas.</li>
+</ul>
+<p><strong>Base legal:</strong> Art. 6.1.b RGPD (ejecución de relación precontractual o contractual); art. 6.1.a RGPD (consentimiento para comunicaciones de cursos y cesión de datos a empresas).</p>
+
+<h3>B. Empresas</h3>
+<p>Tratamos sus datos para:</p>
+<ul>
+<li>Gestionar su alta y acceso al portal de empleo sectorial.</li>
+<li>Facilitarles perfiles de trabajadores en función de sus ofertas de empleo.</li>
+<li>Comunicarles novedades, ofertas e información sectorial relacionada con la bolsa de empleo.</li>
+</ul>
+<p><strong>Base legal:</strong> Art. 6.1.b RGPD (ejecución de relación precontractual o contractual); art. 6.1.a RGPD (consentimiento).</p>
+
+<h2>3. Plazos de conservación</h2>
+<ul>
+<li><strong>Trabajadores:</strong> mientras el perfil esté activo y hasta 3 años tras la baja voluntaria o cancelación.</li>
+<li><strong>Empresas:</strong> mientras el acceso esté activo y hasta 3 años tras la baja.</li>
+<li><strong>Documentos (vida laboral):</strong> mismo plazo que el perfil del trabajador.</li>
+</ul>
+
+<h2>4. Destinatarios y cesiones</h2>
+<ul>
+<li><strong>Empresas del sector:</strong> los perfiles de los trabajadores (y su vida laboral, si la han subido) son accesibles para las empresas del portal que Asopiel asigne expresamente a ese trabajador para un proceso de selección. Esta cesión está cubierta por el consentimiento prestado en el registro.</li>
+<li><strong>Encargados del tratamiento (art. 28 RGPD):</strong> Cloudflare, Inc. (EE. UU.) como proveedor de infraestructura (Workers, KV, R2). La transferencia internacional está cubierta por el DPA público de Cloudflare y cláusulas contractuales tipo aprobadas por la Comisión Europea.</li>
+<li><strong>No se ceden datos a terceros</strong> salvo obligación legal.</li>
+</ul>
+
+<h2>5. Derechos de los interesados</h2>
+<p>Puede ejercer en cualquier momento los siguientes derechos escribiendo a <a href="mailto:gerencia@asopiel.com">gerencia@asopiel.com</a>:</p>
+<ul>
+<li><strong>Acceso:</strong> conocer qué datos tratamos sobre usted.</li>
+<li><strong>Rectificación:</strong> corregir datos inexactos o incompletos.</li>
+<li><strong>Supresión (art. 17 RGPD):</strong> solicitar la eliminación de sus datos cuando ya no sean necesarios para la finalidad con que fueron recabados, o cuando retire el consentimiento.</li>
+<li><strong>Oposición:</strong> oponerse al tratamiento en determinadas circunstancias.</li>
+<li><strong>Limitación:</strong> solicitar que se restrinja el tratamiento de sus datos.</li>
+<li><strong>Portabilidad:</strong> recibir sus datos en formato estructurado y de uso común.</li>
+<li><strong>Retirada del consentimiento:</strong> en cualquier momento, sin que afecte a la licitud del tratamiento previo.</li>
+</ul>
+<p>Si considera que el tratamiento de sus datos no se ajusta a la normativa vigente, puede presentar una reclamación ante la <a href="https://www.aepd.es" target="_blank" rel="noopener">Agencia Española de Protección de Datos (AEPD)</a>.</p>
+
+<h2>6. Medidas de seguridad</h2>
+<p>Los datos se almacenan de forma cifrada en la infraestructura de Cloudflare (KV y R2). Las comunicaciones se realizan mediante HTTPS. El acceso al portal está protegido mediante autenticación con contraseña. Los documentos (vida laboral) solo son accesibles mediante un enlace autenticado con token temporal. El alta de empresas y trabajadores requiere validación manual por parte de Asopiel antes de activar el acceso.</p>
+
+<h2>7. Modificaciones de esta política</h2>
+<p>Asopiel puede modificar esta política de privacidad para adaptarla a cambios legislativos o del servicio. Le informaremos de los cambios relevantes a través del email asociado a su cuenta.</p>
+
+<p style="margin-top:40px;font-size:13px;color:#999">Portal de Empleo Piel de Ubrique · <a href="/">Volver al inicio</a> · <a href="/aviso-legal">Aviso legal</a></p>
+</body>
+</html>`;
+
+// ============================================================
+// AVISO LEGAL (art. 10 LSSI)
+// ============================================================
+const AVISO_LEGAL_HTML = `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Aviso Legal — Portal de Empleo Piel de Ubrique</title>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:800px;margin:0 auto;padding:40px 20px;color:#1a1a2e;line-height:1.8;font-size:16px}
+h1{font-size:24px;font-weight:700;margin-bottom:4px;color:#1a1a2e}
+h2{font-size:17px;font-weight:600;margin-top:32px;margin-bottom:8px;color:#1a1a2e}
+p{margin-bottom:14px}
+ul{margin:0 0 14px 20px}
+li{margin-bottom:6px}
+a{color:#5c6bc0;text-decoration:none}
+a:hover{text-decoration:underline}
+.meta{font-size:13px;color:#666;margin-bottom:32px}
+.back{display:inline-block;margin-bottom:28px;font-size:14px;color:#5c6bc0;text-decoration:none}
+table{width:100%;border-collapse:collapse;margin-bottom:16px;font-size:14px}
+th,td{border:1px solid #ddd;padding:8px 12px;text-align:left;vertical-align:top}
+th{background:#f5f5f5;font-weight:600}
+</style>
+</head>
+<body>
+<a href="/" class="back">← Volver al Portal de Empleo</a>
+<h1>Aviso Legal</h1>
+<p class="meta">En cumplimiento del art. 10 de la Ley 34/2002, de Servicios de la Sociedad de la Información y del Comercio Electrónico (LSSI)</p>
+
+<h2>1. Datos identificativos del titular</h2>
+<table>
+<tr><th>Denominación</th><td>Asociación de Empresarios del Sector de la Piel de Ubrique (ASOPIEL)</td></tr>
+<tr><th>CIF</th><td>G-72357205</td></tr>
+<tr><th>Domicilio</th><td>Avda. de los Callejones, 18, Bloque 1, Planta 1, Puerta C · 11600 Ubrique (Cádiz)</td></tr>
+<tr><th>Email de contacto</th><td><a href="mailto:gerencia@asopiel.com">gerencia@asopiel.com</a></td></tr>
+<tr><th>Naturaleza jurídica</th><td>Asociación sin ánimo de lucro inscrita en el Registro de Asociaciones de Andalucía</td></tr>
+</table>
+
+<h2>2. Objeto y ámbito de aplicación</h2>
+<p>El presente aviso legal regula el uso del <strong>Portal de Empleo Sectorial Piel de Ubrique</strong>, titularidad de Asopiel, cuyo acceso se realiza a través de Internet. El portal tiene como finalidad facilitar la intermediación laboral entre demandantes de empleo y empresas del sector de la marroquinería de Ubrique.</p>
+<p>El acceso al portal y el uso de sus servicios implica la aceptación plena de este aviso legal. Si no está de acuerdo con alguno de sus términos, deberá abstenerse de utilizar el portal.</p>
+
+<h2>3. Condiciones de uso</h2>
+<p>El portal es de acceso privado. Para utilizar sus servicios es necesario registrarse y obtener la validación de Asopiel. El usuario se compromete a:</p>
+<ul>
+<li>Facilitar datos verídicos y actualizados en el proceso de registro.</li>
+<li>No utilizar el portal para fines ilícitos o contrarios a estos términos.</li>
+<li>No realizar acciones que puedan dañar, bloquear o sobrecargar el portal.</li>
+<li>No suplantar la identidad de otros usuarios ni de terceros.</li>
+</ul>
+
+<h2>4. Propiedad intelectual e industrial</h2>
+<p>El código fuente, diseño, textos y elementos del portal son propiedad de Asopiel o de sus colaboradores, y están protegidos por la legislación vigente en materia de propiedad intelectual e industrial. Queda prohibida su reproducción, distribución o modificación sin autorización expresa.</p>
+<p>La denominación <strong>«Piel de Ubrique»</strong> es una Indicación Geográfica Protegida (IGP) regulada por el Reglamento de Ejecución (UE) 2023/2411. Su uso en este portal se limita a la identificación del sector geográfico al que sirve la bolsa de empleo.</p>
+
+<h2>5. Exclusión de responsabilidad</h2>
+<p>Asopiel no se responsabiliza de los daños que puedan derivarse del uso del portal, de interrupciones del servicio, ni de la veracidad de los datos aportados por los usuarios. La intermediación laboral realizada a través del portal no genera relación laboral entre Asopiel y los usuarios, ni garantiza la contratación.</p>
+
+<h2>6. Modificaciones</h2>
+<p>Asopiel se reserva el derecho de modificar este aviso legal, la política de privacidad y las condiciones de uso del portal en cualquier momento.</p>
+
+<h2>7. Legislación aplicable y jurisdicción</h2>
+<p>Este aviso legal se rige por la legislación española. Para la resolución de cualquier controversia, las partes se someten, con renuncia a cualquier otro fuero, a los Juzgados y Tribunales de Cádiz.</p>
+
+<p style="margin-top:40px;font-size:13px;color:#999">Portal de Empleo Piel de Ubrique · <a href="/">Volver al inicio</a> · <a href="/privacidad">Política de privacidad</a></p>
 </body>
 </html>`;
