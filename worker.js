@@ -111,7 +111,7 @@ async function authenticate(request, env) {
 // ── KV structure ─────────────────────────────────────────────
 // user:{id}           → { id, email, password(hash), role, nombre, status, createdAt }
 // empresa:{id}        → { id, userId, nombre, cif, contacto, telefono, email, status, createdAt }
-// trabajador:{id}     → { id, userId, nombre, apellidos, dni, telefono, email, localidad, status, createdAt }
+// trabajador:{id}     → { id, userId, nombre, apellidos, dni, telefono, email, direccion, localidad, status, createdAt }
 // empleo:{id}         → { id, trabajadorId, empresa, cif, sector(fabricacion|oficina), categoria, oficio, fechaInicio, fechaFin, enActivo, tareas, certificadoUrl, certificadoValidado, createdAt }
 // oferta:{id}         → { id, empresaId, titulo, descripcion, categoria, oficio, sector, publica, status(pendiente|activa|cerrada), perfilesDesbloqueados[], createdAt }
 // cert:{id}           → { id, empleoId, trabajadorId, url, validado, validadoAt, createdAt }
@@ -195,14 +195,14 @@ export default {
       // ── Registro trabajador ────────────────────────────────
       if (path === '/trabajadores/registro' && method === 'POST') {
         const body = await request.json();
-        const { nombre, apellidos, dni, telefono, email, localidad } = body;
+        const { nombre, apellidos, dni, telefono, email, direccion, localidad } = body;
         if (!nombre || !apellidos || !dni || !email) return json({ error: 'Faltan campos obligatorios' }, 400);
         const id = generateId();
         const userId = `trab_${id}`;
         const pw = generatePassword();
         const hash = await hashPassword(pw);
         const user = { id: userId, email, password: hash, role: 'trabajador', nombre: `${nombre} ${apellidos}`, status: 'pendiente', createdAt: new Date().toISOString() };
-        const trabajador = { id, userId, nombre, apellidos, dni, telefono, email, localidad, status: 'pendiente', createdAt: new Date().toISOString() };
+        const trabajador = { id, userId, nombre, apellidos, dni, telefono, email, direccion: direccion||'', localidad, status: 'pendiente', createdAt: new Date().toISOString() };
         await env.BOLSA_KV.put(`user:${userId}`, JSON.stringify(user));
         await env.BOLSA_KV.put(`trabajador:${id}`, JSON.stringify(trabajador));
         await addToIndex(env, 'idx:users', userId);
@@ -745,6 +745,7 @@ tr:hover td { background: #FAFAF8; }
         <div class="form-group"><label class="form-label">DNI/NIE <span class="req">*</span></label><input id="rtDni" class="form-control" placeholder="12345678A"></div>
         <div class="form-group"><label class="form-label">Teléfono</label><input id="rtTel" class="form-control" placeholder="6XX..."></div>
       </div>
+      <div class="form-group"><label class="form-label">Dirección</label><input id="rtDireccion" class="form-control" placeholder="Calle Mayor, 12"></div>
       <div class="form-group"><label class="form-label">Localidad</label><input id="rtLocalidad" class="form-control" placeholder="Ubrique"></div>
       <div class="form-group"><label class="form-label">Email <span class="req">*</span></label><input id="rtEmail" type="email" class="form-control"></div>
       <div id="rtError" class="alert alert-danger" style="display:none"></div>
@@ -1143,7 +1144,7 @@ async function registrarEmpresa() {
 async function registrarTrabajador() {
   const err = document.getElementById('rtError'), ok = document.getElementById('rtOk');
   err.style.display = 'none'; ok.style.display = 'none';
-  const body = { nombre: document.getElementById('rtNombre').value.trim(), apellidos: document.getElementById('rtApellidos').value.trim(), dni: document.getElementById('rtDni').value.trim(), telefono: document.getElementById('rtTel').value.trim(), localidad: document.getElementById('rtLocalidad').value.trim(), email: document.getElementById('rtEmail').value.trim() };
+  const body = { nombre: document.getElementById('rtNombre').value.trim(), apellidos: document.getElementById('rtApellidos').value.trim(), dni: document.getElementById('rtDni').value.trim(), telefono: document.getElementById('rtTel').value.trim(), direccion: document.getElementById('rtDireccion').value.trim(), localidad: document.getElementById('rtLocalidad').value.trim(), email: document.getElementById('rtEmail').value.trim() };
   if (!body.nombre || !body.apellidos || !body.dni || !body.email) { err.textContent = 'Complete los campos obligatorios'; err.style.display = 'block'; return; }
   try {
     const r = await fetch(API + '/trabajadores/registro', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -1228,11 +1229,12 @@ async function verPerfilTrabajador(id) {
   body.innerHTML = \`
     <div class="perfil-header">
       <div class="perfil-avatar">\${t.nombre.charAt(0)}</div>
-      <div><div class="perfil-nombre">\${t.nombre} \${t.apellidos}</div><div class="perfil-sub">\${t.localidad||''} · \${t.email}</div></div>
+      <div><div class="perfil-nombre">\${t.nombre} \${t.apellidos}</div><div class="perfil-sub">\${t.direccion ? t.direccion+', ' : ''}\${t.localidad||''} · \${t.email}</div></div>
     </div>
     <div class="form-grid" style="margin-top:12px">
       <div><span style="font-size:12px;color:var(--text-muted)">DNI</span><div style="font-size:14px;font-weight:500">\${t.dni}</div></div>
       <div><span style="font-size:12px;color:var(--text-muted)">Teléfono</span><div style="font-size:14px;font-weight:500">\${t.telefono||'—'}</div></div>
+      <div><span style="font-size:12px;color:var(--text-muted)">Dirección</span><div style="font-size:14px;font-weight:500">\${t.direccion ? t.direccion+', '+( t.localidad||'') : (t.localidad||'—')}</div></div>
     </div>
     <div style="margin-top:16px;color:var(--text-muted);font-size:13px">Para ver el historial completo de empleos, el trabajador debe haber iniciado sesión y añadido sus empleos.</div>
   \`;
@@ -1309,7 +1311,7 @@ async function abrirDesbloqueo(ofertaId, titulo) {
           <input type="checkbox" class="desbloqueo-check" value="\${t.id}" \${desbloqueados.includes(t.id)?'checked':''}>
           <div>
             <div style="font-size:14px;font-weight:500">\${t.nombre} \${t.apellidos}</div>
-            <div style="font-size:12px;color:var(--text-muted)">\${t.localidad||''} · DNI: \${t.dni}</div>
+            <div style="font-size:12px;color:var(--text-muted)">\${t.direccion ? t.direccion+', ' : ''}\${t.localidad||''} · DNI: \${t.dni}</div>
           </div>
         </label>
       \`).join('')}
@@ -1333,7 +1335,7 @@ async function loadMiPerfil() {
   body.innerHTML = \`
     <div class="perfil-header">
       <div class="perfil-avatar">\${d.nombre.charAt(0)}</div>
-      <div><div class="perfil-nombre">\${d.nombre} \${d.apellidos}</div><div class="perfil-sub">\${d.localidad||''}</div></div>
+      <div><div class="perfil-nombre">\${d.nombre} \${d.apellidos}</div><div class="perfil-sub">\${d.direccion ? d.direccion+', ' : ''}\${d.localidad||''}</div></div>
     </div>
     <div class="form-grid" style="margin-top:16px">
       <div><span style="font-size:12px;color:var(--text-muted)">DNI/NIE</span><div style="font-size:14px;font-weight:500">\${d.dni}</div></div>
@@ -1540,7 +1542,7 @@ async function verPerfilesOferta(ofertaId) {
           <div class="perfil-avatar">\${t.nombre.charAt(0)}</div>
           <div>
             <div class="perfil-nombre">\${t.nombre} \${t.apellidos}</div>
-            <div class="perfil-sub">\${t.localidad||''} · <a href="tel:\${t.telefono}">\${t.telefono||''}</a> · <a href="mailto:\${t.email}">\${t.email}</a></div>
+            <div class="perfil-sub">\${t.direccion ? t.direccion+', ' : ''}\${t.localidad||''} · <a href="tel:\${t.telefono}">\${t.telefono||''}</a> · <a href="mailto:\${t.email}">\${t.email}</a></div>
           </div>
         </div>
         \${(t.empleos||[]).map(e => \`
@@ -1596,7 +1598,7 @@ const LEGAL_TEXTS = {
 Dirección: Ubrique, Cádiz (España)<br>
 Email de contacto: <a href="mailto:oficina@asopiel.com">oficina@asopiel.com</a></p>
 <h4 style="color:var(--text);margin:16px 0 8px">2. Datos que recogemos</h4>
-<p><strong>Trabajadores:</strong> nombre, apellidos, DNI/NIE, teléfono, email, localidad, historial laboral y certificados de empresa.</p>
+<p><strong>Trabajadores:</strong> nombre, apellidos, DNI/NIE, teléfono, email, dirección, localidad, historial laboral y certificados de empresa.</p>
 <p><strong>Empresas:</strong> nombre, CIF, persona de contacto, teléfono y email.</p>
 <h4 style="color:var(--text);margin:16px 0 8px">3. Finalidad y base jurídica</h4>
 <p>Los datos se tratan para la gestión de la bolsa de empleo sectorial (ejecución de una relación precontractual o contractual, art. 6.1.b RGPD) y para el envío de comunicaciones relacionadas con el servicio (interés legítimo, art. 6.1.f RGPD).</p>
