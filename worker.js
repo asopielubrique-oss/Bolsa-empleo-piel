@@ -416,6 +416,22 @@ export default {
         return json({ error: 'Perfil no encontrado' }, 404);
       }
 
+      // ── Trabajador: actualizar perfil (disciplinas) ───────
+      if (path === '/mi-perfil' && method === 'PUT') {
+        if (!user || user.role !== 'trabajador') return json({ error: 'No autorizado' }, 403);
+        const body = await request.json();
+        const ids = await getIndex(env, 'idx:trabajadores');
+        for (const id of ids) {
+          const t = await env.BOLSA_KV.get(`trabajador:${id}`, 'json');
+          if (t && t.userId === user.id) {
+            if (body.disciplinas !== undefined) t.disciplinas = body.disciplinas;
+            await env.BOLSA_KV.put(`trabajador:${id}`, JSON.stringify(t));
+            return json({ ok: true });
+          }
+        }
+        return json({ error: 'Perfil no encontrado' }, 404);
+      }
+
       // ── Trabajador: añadir empleo ──────────────────────────
       if (path === '/empleos' && method === 'POST') {
         if (!user || user.role !== 'trabajador') return json({ error: 'No autorizado' }, 403);
@@ -1283,7 +1299,14 @@ async function verPerfilTrabajador(id) {
       <div><span style="font-size:12px;color:var(--text-muted)">Teléfono</span><div style="font-size:14px;font-weight:500">\${t.telefono||'—'}</div></div>
       <div><span style="font-size:12px;color:var(--text-muted)">Dirección</span><div style="font-size:14px;font-weight:500">\${t.direccion ? t.direccion+', '+( t.localidad||'') : (t.localidad||'—')}</div></div>
     </div>
-    <div style="margin-top:16px;color:var(--text-muted);font-size:13px">Para ver el historial completo de empleos, el trabajador debe haber iniciado sesión y añadido sus empleos.</div>
+    \${t.disciplinas && t.disciplinas.length ? \`
+    <div style="margin-top:16px">
+      <div style="font-size:14px;font-weight:600;margin-bottom:8px">🛠 Disciplinas y categorías</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        \${t.disciplinas.map(d=>\`<span class="badge badge-accent" style="font-size:12px">\${d.oficio} · \${d.categoria}</span>\`).join('')}
+      </div>
+    </div>\` : '<div style="margin-top:16px;color:var(--text-muted);font-size:13px">Sin disciplinas registradas.</div>'}
+    <div style="margin-top:12px;color:var(--text-muted);font-size:13px">Para ver el historial completo de empleos, el trabajador debe haber iniciado sesión y añadido sus empleos.</div>
   \`;
   document.getElementById('modalPerfil').classList.add('open');
 }
@@ -1397,6 +1420,18 @@ async function loadMiPerfil() {
   const r = await fetch(API + '/mi-perfil', { headers: headers() });
   const d = await r.json();
   const body = document.getElementById('miPerfilBody');
+  const disciplinas = d.disciplinas || [];
+  const disciplinasHtml = disciplinas.length
+    ? disciplinas.map((disc, i) => \`
+        <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg)">
+          <div style="flex:1">
+            <span style="font-size:13px;font-weight:500">\${disc.oficio}</span>
+            <span style="font-size:12px;color:var(--text-muted);margin-left:8px">· \${disc.categoria}</span>
+          </div>
+          <button class="btn btn-outline btn-sm" style="color:var(--danger)" onclick="eliminarDisciplina(\${i})">✕</button>
+        </div>\`).join('')
+    : '<div style="font-size:13px;color:var(--text-muted)">No ha añadido disciplinas todavía.</div>';
+
   body.innerHTML = \`
     <div class="perfil-header">
       <div class="perfil-avatar">\${d.nombre.charAt(0)}</div>
@@ -1408,7 +1443,51 @@ async function loadMiPerfil() {
       <div><span style="font-size:12px;color:var(--text-muted)">Email</span><div style="font-size:14px;font-weight:500">\${d.email}</div></div>
       <div><span style="font-size:12px;color:var(--text-muted)">Estado</span><div>\${d.status==='activo'?'<span class="badge badge-success">Activo</span>':'<span class="badge badge-warning">Pendiente</span>'}</div></div>
     </div>
+    <div style="margin-top:24px">
+      <div style="font-size:15px;font-weight:600;margin-bottom:10px">🛠 Mis disciplinas y categorías</div>
+      <div id="listaDisciplinas" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">\${disciplinasHtml}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+        <div>
+          <label style="font-size:12px;color:var(--text-muted)">Disciplina (oficio)</label>
+          <select id="nuevaDiscOficio" class="form-control" style="min-width:160px" onchange="actualizarCatDisc()">
+            <option value="">Seleccione...</option>
+            <optgroup label="Fabricación">\${(CATEGORIAS?.oficios||[]).map(o=>\`<option value="\${o}">\${o}</option>\`).join('')}</optgroup>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:12px;color:var(--text-muted)">Categoría</label>
+          <select id="nuevaDiscCategoria" class="form-control" style="min-width:180px">
+            <option value="">Seleccione disciplina primero</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" onclick="agregarDisciplina()">+ Añadir</button>
+      </div>
+    </div>
   \`;
+  window._perfilDisciplinas = disciplinas.slice();
+}
+
+function actualizarCatDisc() {
+  const sel = document.getElementById('nuevaDiscCategoria');
+  sel.innerHTML = (CATEGORIAS?.fabricacion||[]).map(c=>\`<option value="\${c}">\${c}</option>\`).join('');
+}
+
+async function agregarDisciplina() {
+  const oficio = document.getElementById('nuevaDiscOficio').value;
+  const categoria = document.getElementById('nuevaDiscCategoria').value;
+  if (!oficio || !categoria) return;
+  if (!window._perfilDisciplinas) window._perfilDisciplinas = [];
+  if (window._perfilDisciplinas.find(d => d.oficio === oficio && d.categoria === categoria)) return;
+  window._perfilDisciplinas.push({ oficio, categoria });
+  await fetch(API + '/mi-perfil', { method: 'PUT', headers: headers(), body: JSON.stringify({ disciplinas: window._perfilDisciplinas }) });
+  loadMiPerfil();
+}
+
+async function eliminarDisciplina(idx) {
+  if (!window._perfilDisciplinas) return;
+  window._perfilDisciplinas.splice(idx, 1);
+  await fetch(API + '/mi-perfil', { method: 'PUT', headers: headers(), body: JSON.stringify({ disciplinas: window._perfilDisciplinas }) });
+  loadMiPerfil();
 }
 
 // ── Trabajador: empleos ────────────────────────────────────
