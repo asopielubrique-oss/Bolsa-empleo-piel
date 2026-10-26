@@ -140,6 +140,25 @@ export default {
         return new Response(null, { headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': '*', 'Access-Control-Allow-Headers': '*' } });
       }
 
+      // ── Reset passwords de usuarios de ejemplo ─────────────
+      if (path === '/reset-sample' && method === 'POST') {
+        const resets = [
+          { userId: 'trab_046ba152adea', password: 'Trabaja123!' },
+          { userId: 'trab_f1046c16bf11', password: 'Trabaja123!' },
+          { userId: 'emp_2f35c9176471',  password: 'Empresa123!' },
+          { userId: 'emp_b88966f7d64b',  password: 'Empresa123!' },
+        ];
+        const results = [];
+        for (const { userId, password } of resets) {
+          const u = await env.BOLSA_KV.get(`user:${userId}`, 'json');
+          if (!u) { results.push({ userId, error: 'no encontrado' }); continue; }
+          u.password = await hashPassword(password);
+          await env.BOLSA_KV.put(`user:${userId}`, JSON.stringify(u));
+          results.push({ userId, ok: true });
+        }
+        return json({ ok: true, results });
+      }
+
       // ── Seed admin ─────────────────────────────────────────
       if (path === '/seed' && method === 'POST') {
         const existing = await env.BOLSA_KV.get('user:admin');
