@@ -309,8 +309,14 @@ export default {
       if (path === '/admin/trabajadores' && method === 'GET') {
         if (!user || user.role !== 'admin') return json({ error: 'No autorizado' }, 403);
         const ids = await getIndex(env, 'idx:trabajadores');
-        const todos = await Promise.all(ids.map(id => env.BOLSA_KV.get(`trabajador:${id}`, 'json')));
-        return json(todos.filter(Boolean));
+        const todos = (await Promise.all(ids.map(id => env.BOLSA_KV.get(`trabajador:${id}`, 'json')))).filter(Boolean);
+        // Enriquecer con sectores del historial laboral
+        for (const t of todos) {
+          const empleoIds = await getIndex(env, `idx:empleos:${t.id}`);
+          const empleos = (await Promise.all(empleoIds.map(eid => env.BOLSA_KV.get(`empleo:${eid}`, 'json')))).filter(Boolean);
+          t.sectores = [...new Set(empleos.map(e => e.sector).filter(Boolean))];
+        }
+        return json(todos);
       }
 
       // ── Admin: listar todas las empresas ──────────────────
@@ -1346,14 +1352,20 @@ async function abrirDesbloqueo(ofertaId, titulo) {
   const desbloqueados = oferta?.perfilesDesbloqueados || [];
   if (!trabajadores.length) { body.innerHTML = '<div class="alert alert-warning">No hay trabajadores activos registrados.</div>'; return; }
   body.innerHTML = \`
-    <p style="font-size:13px;color:var(--text-secondary);margin-bottom:16px">Seleccione los trabajadores cuyo perfil desea mostrar a la empresa para esta oferta.</p>
+    <p style="font-size:13px;color:var(--text-secondary);margin-bottom:12px">Seleccione los trabajadores cuyo perfil desea mostrar a la empresa para esta oferta.</p>
+    <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+      <button class="btn btn-outline btn-sm" onclick="seleccionarSector('fabricacion')">🏭 Todos Fabricación</button>
+      <button class="btn btn-outline btn-sm" onclick="seleccionarSector('oficina')">🗂 Todos Oficina/Logística</button>
+      <button class="btn btn-outline btn-sm" onclick="seleccionarSector('todos')">✅ Seleccionar todos</button>
+      <button class="btn btn-outline btn-sm" onclick="seleccionarSector('ninguno')">✕ Deseleccionar todos</button>
+    </div>
     <div style="display:flex;flex-direction:column;gap:8px">
       \${trabajadores.map(t => \`
-        <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;cursor:pointer;background:var(--bg)">
+        <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;cursor:pointer;background:var(--bg)" data-sectores="\${(t.sectores||[]).join(',')}">
           <input type="checkbox" class="desbloqueo-check" value="\${t.id}" \${desbloqueados.includes(t.id)?'checked':''}>
           <div>
             <div style="font-size:14px;font-weight:500">\${t.nombre} \${t.apellidos}</div>
-            <div style="font-size:12px;color:var(--text-muted)">\${t.direccion ? t.direccion+', ' : ''}\${t.localidad||''} · DNI: \${t.dni}</div>
+            <div style="font-size:12px;color:var(--text-muted)">\${t.direccion ? t.direccion+', ' : ''}\${t.localidad||''} · DNI: \${t.dni}\${t.sectores&&t.sectores.length?' · '+t.sectores.map(s=>s==='fabricacion'?'Fabricación':'Oficina/Logística').join(', '):''}</div>
           </div>
         </label>
       \`).join('')}
@@ -1367,6 +1379,17 @@ async function guardarDesbloqueo() {
   await fetch(API + \`/admin/ofertas/\${currentOfertaId}/desbloquear\`, { method: 'POST', headers: headers(), body: JSON.stringify({ perfiles }) });
   cerrarModal('modalDesbloquear');
   loadOfertasAdmin();
+}
+
+function seleccionarSector(sector) {
+  const labels = document.querySelectorAll('#modalDesbloquearBody label[data-sectores]');
+  labels.forEach(label => {
+    const check = label.querySelector('input[type=checkbox]');
+    const sectores = label.getAttribute('data-sectores');
+    if (sector === 'todos') check.checked = true;
+    else if (sector === 'ninguno') check.checked = false;
+    else check.checked = sectores.includes(sector);
+  });
 }
 
 // ── Trabajador: mi perfil ──────────────────────────────────
