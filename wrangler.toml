@@ -1,0 +1,8 @@
+name = "bolsa-empleo-piel"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+account_id = "3f3498530234342f9c9a5b1f1774fdb2"
+
+[[kv_namespaces]]
+binding = "BOLSA_KV"
+id = "c84822a7c203496cae0874b1b2d8ee10"
