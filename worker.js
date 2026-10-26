@@ -341,6 +341,27 @@ export default {
         return json(todas.map(o => ({ ...o, nombreEmpresa: empresasMap[o.empresaId] || '' })));
       }
 
+      // ── Admin: ver sugerencias de formación ───────────────
+      if (path === '/admin/sugerencias' && method === 'GET') {
+        if (!user || user.role !== 'admin') return json({ error: 'No autorizado' }, 403);
+        const ids = await getIndex(env, 'idx:sugerencias');
+        const todas = (await Promise.all(ids.map(id => env.BOLSA_KV.get(`sugerencia:${id}`, 'json')))).filter(Boolean);
+        todas.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        return json(todas);
+      }
+
+      // ── Admin: marcar sugerencia como leída ───────────────
+      if (path.match(/^\/admin\/sugerencias\/([^/]+)\/leer$/) && method === 'POST') {
+        if (!user || user.role !== 'admin') return json({ error: 'No autorizado' }, 403);
+        const id = path.split('/')[3];
+        const s = await env.BOLSA_KV.get(`sugerencia:${id}`, 'json');
+        if (!s) return json({ error: 'No encontrada' }, 404);
+        s.leida = true;
+        s.leidaAt = new Date().toISOString();
+        await env.BOLSA_KV.put(`sugerencia:${id}`, JSON.stringify(s));
+        return json({ ok: true });
+      }
+
       // ── Admin: activar oferta + desbloquear perfiles ───────
       if (path.match(/^\/admin\/ofertas\/([^/]+)\/desbloquear$/) && method === 'POST') {
         if (!user || user.role !== 'admin') return json({ error: 'No autorizado' }, 403);
@@ -425,11 +446,109 @@ export default {
           const t = await env.BOLSA_KV.get(`trabajador:${id}`, 'json');
           if (t && t.userId === user.id) {
             if (body.disciplinas !== undefined) t.disciplinas = body.disciplinas;
+            if (body.recibirCursos !== undefined) t.recibirCursos = body.recibirCursos;
             await env.BOLSA_KV.put(`trabajador:${id}`, JSON.stringify(t));
             return json({ ok: true });
           }
         }
         return json({ error: 'Perfil no encontrado' }, 404);
+      }
+
+      // ── Trabajador: enviar sugerencia de formación ──────────
+      if (path === '/sugerencias' && method === 'POST') {
+        if (!user || user.role !== 'trabajador') return json({ error: 'No autorizado' }, 403);
+        const body = await request.json();
+        const { texto } = body;
+        if (!texto || !texto.trim()) return json({ error: 'El texto no puede estar vacío' }, 400);
+        // Buscar trabajador
+        const tids = await getIndex(env, 'idx:trabajadores');
+        let nombreTrab = '';
+        for (const tid of tids) {
+          const t = await env.BOLSA_KV.get(`trabajador:${tid}`, 'json');
+          if (t && t.userId === user.id) { nombreTrab = `${t.nombre} ${t.apellidos}`; break; }
+        }
+        const sid = generateId();
+        const sugerencia = { id: sid, userId: user.id, nombre: nombreTrab, texto: texto.trim(), leida: false, createdAt: new Date().toISOString() };
+        await env.BOLSA_KV.put(`sugerencia:${sid}`, JSON.stringify(sugerencia));
+        await addToIndex(env, 'idx:sugerencias', sid);
+        return json({ ok: true });
+      }
+
+      // ── Trabajador: subir vida laboral (R2) ─────────────────
+      if (path === '/vida-laboral' && method === 'POST') {
+        if (!user || user.role !== 'trabajador') return json({ error: 'No autorizado' }, 403);
+        const formData = await request.formData();
+        const file = formData.get('file');
+        if (!file) return json({ error: 'No se recibió archivo' }, 400);
+        // Validar tipo y tamaño (máx 5 MB)
+        const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png'];
+        if (!allowedTypes.includes(file.type)) return json({ error: 'Solo se admiten PDF, JPG o PNG' }, 400);
+        const arrayBuffer = await file.arrayBuffer();
+        if (arrayBuffer.byteLength > 5 * 1024 * 1024) return json({ error: 'El archivo supera el límite de 5 MB' }, 400);
+        // Buscar trabajador para guardar referencia
+        const tids = await getIndex(env, 'idx:trabajadores');
+        let trabajadorObj = null;
+        for (const tid of tids) {
+          const t = await env.BOLSA_KV.get(`trabajador:${tid}`, 'json');
+          if (t && t.userId === user.id) { trabajadorObj = t; break; }
+        }
+        if (!trabajadorObj) return json({ error: 'Perfil no encontrado' }, 404);
+        // Si ya tenía una vida laboral, borrar la anterior de R2
+        if (trabajadorObj.vidaLaboralKey) {
+          try { await env.BOLSA_R2.delete(trabajadorObj.vidaLaboralKey); } catch(e) {}
+        }
+        const ext = file.type === 'application/pdf' ? 'pdf' : (file.type === 'image/png' ? 'png' : 'jpg');
+        const key = `vida-laboral/${trabajadorObj.id}/${generateId()}.${ext}`;
+        await env.BOLSA_R2.put(key, arrayBuffer, { httpMetadata: { contentType: file.type } });
+        trabajadorObj.vidaLaboralKey = key;
+        trabajadorObj.vidaLaboralFileName = file.name;
+        trabajadorObj.vidaLaboralFecha = new Date().toISOString();
+        await env.BOLSA_KV.put(`trabajador:${trabajadorObj.id}`, JSON.stringify(trabajadorObj));
+        return json({ ok: true, fileName: file.name });
+      }
+
+      // ── Ver vida laboral (admin, empresa con acceso, propio trabajador) ──
+      if (path.match(/^\/vida-laboral\/([^/]+)$/) && method === 'GET') {
+        // Soportar token en query param para enlace directo en navegador
+        let user2 = user;
+        if (!user2) {
+          const qToken = url.searchParams.get('token');
+          if (qToken) {
+            const fakeReq = new Request(request.url, { headers: { Authorization: `Bearer ${qToken}` } });
+            user2 = await authenticate(fakeReq, env);
+          }
+        }
+        if (!user2) return json({ error: 'No autorizado' }, 401);
+        const trabajadorId = path.split('/')[2];
+        const t = await env.BOLSA_KV.get(`trabajador:${trabajadorId}`, 'json');
+        if (!t || !t.vidaLaboralKey) return json({ error: 'No hay vida laboral subida' }, 404);
+        // Permisos: admin, el propio trabajador, o empresa con acceso
+        let permitido = user2.role === 'admin';
+        if (!permitido && user2.role === 'trabajador') {
+          permitido = t.userId === user2.id;
+        }
+        if (!permitido && user2.role === 'empresa') {
+          // Verificar que la empresa tiene acceso a este trabajador (perfiles asignados)
+          const ofertaIds = await getIndex(env, 'idx:ofertas');
+          outer: for (const oid of ofertaIds) {
+            const o = await env.BOLSA_KV.get(`oferta:${oid}`, 'json');
+            if (o && o.perfilesAsignados && o.perfilesAsignados.includes(trabajadorId)) {
+              const empIds = await getIndex(env, 'idx:empresas');
+              for (const eid of empIds) {
+                const e = await env.BOLSA_KV.get(`empresa:${eid}`, 'json');
+                if (e && e.userId === user2.id && e.id === o.empresaId) { permitido = true; break outer; }
+              }
+            }
+          }
+        }
+        if (!permitido) return json({ error: 'No autorizado' }, 403);
+        const obj = await env.BOLSA_R2.get(t.vidaLaboralKey);
+        if (!obj) return json({ error: 'Archivo no encontrado' }, 404);
+        const headers2 = new Headers();
+        headers2.set('Content-Type', obj.httpMetadata?.contentType || 'application/octet-stream');
+        headers2.set('Content-Disposition', `inline; filename="${t.vidaLaboralFileName || 'vida-laboral'}"`);
+        headers2.set('Cache-Control', 'private, max-age=300');
+        return new Response(obj.body, { headers: headers2 });
       }
 
       // ── Trabajador: añadir empleo ──────────────────────────
@@ -846,6 +965,7 @@ tr:hover td { background: #FAFAF8; }
         <button class="tab" onclick="adminTab('trabajadores')">👷 Trabajadores</button>
         <button class="tab" onclick="adminTab('empresas')">🏭 Empresas</button>
         <button class="tab" onclick="adminTab('ofertas')">📋 Ofertas</button>
+        <button class="tab" onclick="adminTab('sugerencias')" id="tabBtnSugerencias">💡 Sugerencias</button>
       </div>
 
       <!-- Métricas -->
@@ -906,6 +1026,12 @@ tr:hover td { background: #FAFAF8; }
       <div id="tabOfertas" class="tab-panel">
         <div class="section-header"><div><div class="section-title">Ofertas de empleo</div><div class="section-sub">Valide y asigne perfiles a cada oferta</div></div></div>
         <div id="ofertasAdminContent"><div class="alert alert-info">Cargando...</div></div>
+      </div>
+
+      <!-- Sugerencias de formación -->
+      <div id="tabSugerencias" class="tab-panel">
+        <div class="section-header"><div><div class="section-title">💡 Propuestas de formación</div><div class="section-sub">Sugerencias enviadas por los trabajadores</div></div></div>
+        <div id="sugerenciasAdminContent"><div class="alert alert-info">Cargando...</div></div>
       </div>
     </div>
 
@@ -1155,7 +1281,7 @@ function showApp() {
   document.getElementById('viewAdmin').style.display = ROL === 'admin' ? 'block' : 'none';
   document.getElementById('viewTrabajador').style.display = ROL === 'trabajador' ? 'block' : 'none';
   document.getElementById('viewEmpresa').style.display = ROL === 'empresa' ? 'block' : 'none';
-  if (ROL === 'admin') { loadMetricas(); loadPendientes(); loadTrabajadoresAdmin(); loadEmpresasAdmin(); loadOfertasAdmin(); }
+  if (ROL === 'admin') { loadMetricas(); loadPendientes(); loadTrabajadoresAdmin(); loadEmpresasAdmin(); loadOfertasAdmin(); loadSugerenciasAdmin(); }
   if (ROL === 'trabajador') { loadMiPerfil(); loadMisEmpleos(); loadOfertasPublicas(); }
   if (ROL === 'empresa') { loadMisOfertas(); }
 }
@@ -1173,9 +1299,10 @@ function switchLoginTab(tab) {
 
 // ── Admin tabs ─────────────────────────────────────────────
 function adminTab(name) {
-  const panels = ['metricas','pendientes','trabajadores','empresas','ofertas'];
+  const panels = ['metricas','pendientes','trabajadores','empresas','ofertas','sugerencias'];
   panels.forEach(p => { document.getElementById('tab' + cap(p)).classList.toggle('active', p === name); });
   document.querySelectorAll('#adminTabs .tab').forEach((t, i) => t.classList.toggle('active', panels[i] === name));
+  if (name === 'sugerencias') loadSugerenciasAdmin();
 }
 function trabTab(name) {
   const panels = ['miPerfil','misEmpleos','ofertasPublicas'];
@@ -1306,6 +1433,17 @@ async function verPerfilTrabajador(id) {
         \${t.disciplinas.map(d=>\`<span class="badge badge-accent" style="font-size:12px">\${d.oficio} · \${d.categoria}</span>\`).join('')}
       </div>
     </div>\` : '<div style="margin-top:16px;color:var(--text-muted);font-size:13px">Sin disciplinas registradas.</div>'}
+    <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
+      <div style="font-size:14px;font-weight:600;margin-bottom:8px">📄 Vida laboral</div>
+      \${t.vidaLaboralFileName
+        ? \`<div style="display:flex;align-items:center;gap:10px">
+             <span style="font-size:13px">📎 \${escHtml(t.vidaLaboralFileName)}</span>
+             <span style="font-size:11px;color:var(--text-muted)">\${t.vidaLaboralFecha ? fmtDate(t.vidaLaboralFecha) : ''}</span>
+             <a href="\${API}/vida-laboral/\${t.id}?token=\${TOKEN}" target="_blank" class="btn btn-outline btn-sm">Abrir</a>
+           </div>\`
+        : '<span style="font-size:13px;color:var(--text-muted)">No ha subido vida laboral todavía.</span>'}
+    </div>
+    \${t.recibirCursos ? '<div style="margin-top:10px"><span class="badge badge-success">✓ Interesado en recibir info de cursos</span></div>' : ''}
     <div style="margin-top:12px;color:var(--text-muted);font-size:13px">Para ver el historial completo de empleos, el trabajador debe haber iniciado sesión y añadido sus empleos.</div>
   \`;
   document.getElementById('modalPerfil').classList.add('open');
@@ -1351,6 +1489,37 @@ async function loadOfertasAdmin() {
       </div>
     </div>\`;
   }).join('');
+}
+
+async function loadSugerenciasAdmin() {
+  const div = document.getElementById('sugerenciasAdminContent');
+  if (!div) return;
+  const r = await fetch(API + '/admin/sugerencias', { headers: headers() });
+  const lista = await r.json();
+  // Actualizar badge en pestaña
+  const noLeidas = lista.filter(s => !s.leida).length;
+  const btn = document.getElementById('tabBtnSugerencias');
+  if (btn) btn.textContent = noLeidas > 0 ? \`💡 Sugerencias (\${noLeidas})\` : '💡 Sugerencias';
+  if (!lista.length) { div.innerHTML = '<div class="alert alert-info">Aún no hay propuestas de formación enviadas.</div>'; return; }
+  div.innerHTML = lista.map(s => \`
+    <div class="oferta-card" style="\${s.leida ? 'opacity:0.7' : 'border-left:3px solid var(--primary)'}">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+        <div>
+          <span style="font-size:14px;font-weight:600">\${escHtml(s.nombre)}</span>
+          <span style="font-size:12px;color:var(--text-muted);margin-left:8px">\${fmtDate(s.createdAt)}</span>
+        </div>
+        \${s.leida
+          ? '<span class="badge badge-gray">Leída</span>'
+          : \`<button class="btn btn-outline btn-sm" onclick="marcarSugerenciaLeida('\${s.id}')">✓ Marcar leída</button>\`}
+      </div>
+      <p style="font-size:14px;color:var(--text-secondary);margin:0;white-space:pre-wrap">\${escHtml(s.texto)}</p>
+    </div>
+  \`).join('');
+}
+
+async function marcarSugerenciaLeida(id) {
+  await fetch(API + \`/admin/sugerencias/\${id}/leer\`, { method: 'POST', headers: headers() });
+  loadSugerenciasAdmin();
 }
 
 async function activarOferta(id) {
@@ -1463,8 +1632,48 @@ async function loadMiPerfil() {
         <button class="btn btn-primary" onclick="agregarDisciplina()">+ Añadir</button>
       </div>
     </div>
+
+    <div style="margin-top:28px;padding-top:24px;border-top:1px solid var(--border)">
+      <div style="font-size:15px;font-weight:600;margin-bottom:14px">🎓 Formación</div>
+
+      <label style="display:flex;align-items:center;gap:10px;padding:14px 16px;border:1px solid var(--border);border-radius:10px;background:var(--bg-card);cursor:pointer;margin-bottom:12px">
+        <input type="checkbox" id="recibirCursosCheck" \${d.recibirCursos ? 'checked' : ''} onchange="toggleRecibirCursos(this.checked)" style="width:18px;height:18px;accent-color:var(--primary)">
+        <div>
+          <div style="font-size:14px;font-weight:500">Quiero recibir información sobre cursos del sector</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:2px">Asopiel te avisará cuando haya cursos, talleres o seminarios de marroquinería disponibles</div>
+        </div>
+      </label>
+
+      <div style="padding:14px 16px;border:1px solid var(--border);border-radius:10px;background:var(--bg-card);margin-bottom:12px">
+        <div style="font-size:14px;font-weight:500;margin-bottom:8px">📄 Vida laboral</div>
+        \${d.vidaLaboralFileName
+          ? \`<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+               <span style="font-size:13px;color:var(--text-secondary)">📎 \${escHtml(d.vidaLaboralFileName)}</span>
+               <span style="font-size:11px;color:var(--text-muted)">\${d.vidaLaboralFecha ? '(subida el ' + fmtDate(d.vidaLaboralFecha) + ')' : ''}</span>
+               <a href="\${API}/vida-laboral/\${d.id}?token=\${TOKEN}" target="_blank" class="btn btn-outline btn-sm">Ver</a>
+             </div>\`
+          : '<div style="font-size:13px;color:var(--text-muted);margin-bottom:10px">Aún no ha subido su vida laboral.</div>'}
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <input type="file" id="vidaLaboralInput" accept=".pdf,.jpg,.jpeg,.png" style="display:none" onchange="subirVidaLaboral(this)">
+          <button class="btn btn-outline btn-sm" onclick="document.getElementById('vidaLaboralInput').click()">
+            \${d.vidaLaboralFileName ? '🔄 Actualizar vida laboral' : '⬆ Subir vida laboral'}
+          </button>
+          <span style="font-size:11px;color:var(--text-muted)">PDF, JPG o PNG · máx. 5 MB</span>
+          <span id="vidaLaboralStatus" style="font-size:12px;color:var(--primary)"></span>
+        </div>
+      </div>
+
+      <div style="padding:14px 16px;border:1px solid var(--border);border-radius:10px;background:var(--bg-card)">
+        <div style="font-size:14px;font-weight:500;margin-bottom:6px">💡 Proponer formación a Asopiel</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">¿Echa en falta algún curso, taller o seminario? Cuéntenoslo y lo estudiaremos.</div>
+        <textarea id="sugerenciaTexto" class="form-control" rows="3" placeholder="Ej: Sería interesante un taller de teñido de pieles para oficiales..." style="resize:vertical;margin-bottom:8px"></textarea>
+        <button class="btn btn-primary btn-sm" onclick="enviarSugerencia()">Enviar propuesta</button>
+        <span id="sugerenciaStatus" style="font-size:12px;color:var(--primary);margin-left:10px"></span>
+      </div>
+    </div>
   \`;
   window._perfilDisciplinas = disciplinas.slice();
+  window._perfilId = d.id;
 }
 
 function actualizarCatDisc() {
@@ -1488,6 +1697,38 @@ async function eliminarDisciplina(idx) {
   window._perfilDisciplinas.splice(idx, 1);
   await fetch(API + '/mi-perfil', { method: 'PUT', headers: headers(), body: JSON.stringify({ disciplinas: window._perfilDisciplinas }) });
   loadMiPerfil();
+}
+
+async function toggleRecibirCursos(checked) {
+  await fetch(API + '/mi-perfil', { method: 'PUT', headers: headers(), body: JSON.stringify({ recibirCursos: checked }) });
+}
+
+async function subirVidaLaboral(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const status = document.getElementById('vidaLaboralStatus');
+  status.textContent = 'Subiendo...';
+  const formData = new FormData();
+  formData.append('file', file);
+  const r = await fetch(API + '/vida-laboral', { method: 'POST', headers: { Authorization: 'Bearer ' + TOKEN }, body: formData });
+  const d = await r.json();
+  if (d.ok) { status.textContent = '✓ Subido correctamente'; setTimeout(() => loadMiPerfil(), 800); }
+  else { status.textContent = '✗ Error: ' + (d.error || 'desconocido'); }
+}
+
+async function enviarSugerencia() {
+  const texto = document.getElementById('sugerenciaTexto').value.trim();
+  const status = document.getElementById('sugerenciaStatus');
+  if (!texto) { status.textContent = 'Escriba una propuesta antes de enviar.'; return; }
+  status.textContent = 'Enviando...';
+  const r = await fetch(API + '/sugerencias', { method: 'POST', headers: headers(), body: JSON.stringify({ texto }) });
+  const d = await r.json();
+  if (d.ok) {
+    status.textContent = '✓ Propuesta enviada. ¡Gracias!';
+    document.getElementById('sugerenciaTexto').value = '';
+  } else {
+    status.textContent = '✗ Error: ' + (d.error || 'desconocido');
+  }
 }
 
 // ── Trabajador: empleos ────────────────────────────────────

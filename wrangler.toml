@@ -6,3 +6,7 @@ account_id = "3f3498530234342f9c9a5b1f1774fdb2"
 [[kv_namespaces]]
 binding = "BOLSA_KV"
 id = "c84822a7c203496cae0874b1b2d8ee10"
+
+[[r2_buckets]]
+binding = "BOLSA_R2"
+bucket_name = "bolsa-empleo-docs"
